@@ -11,9 +11,107 @@
     </div>
 
     <div class="content">
-      <button class="mybutton" onclick="Click()">Reset</button>
+
+      <div class="card-grid">
+        <div class="card">
+          <h2>Pin value</h2>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 1 :</div>
+            <div class="channelvalue" id="Pin1">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 2 :</div>
+            <div class="channelvalue" id="Pin2">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 3 :</div>
+            <div class="channelvalue" id="Pin3">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 4 :</div>
+            <div class="channelvalue" id="Pin4">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 5 :</div>
+            <div class="channelvalue" id="Pin5">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 6 :</div>
+            <div class="channelvalue" id="Pin6">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 7 :</div>
+            <div class="channelvalue" id="Pin7">Init value</div>
+          </div>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Pin 8 :</div>
+            <div class="channelvalue" id="Pin8">Init value</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h2>Temp value</h2>
+          <div style="display: flex; justify-content: center; align-items: center;">
+            <div class="channeltitre">Temp 1 :</div>
+            <div class="channelvalue" id="Temp1">Init value</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h2>Delete all files</h2>
+          <button class="mybutton" onclick="Click()">Delete</button>
+        </div>
+      </div>
+      
     </div>
     <script>
+      const socket = new WebSocket("ws://" + window.location.hostname + "/ws");
+
+      socket.onmessage = (event) => {
+        console.log(event.data)
+        let data = JSON.parse(event.data)
+        //console.log(data.channel)
+        //console.log(data.value)
+
+        switch (data.channel) {
+          case "Temp1":
+            document.getElementById("Temp1").innerHTML = data.value + "°C" ;
+            break;
+          case "Pin1":
+            document.getElementById("Pin1").innerHTML = data.value ;  
+            break;
+          case "Pin2":
+            document.getElementById("Pin2").innerHTML = data.value ;  
+            break;
+          case "Pin3":
+            document.getElementById("Pin3").innerHTML = data.value ;  
+            break;
+          case "Pin4":
+            document.getElementById("Pin4").innerHTML = data.value ;  
+            break;
+          case "Pin5":
+            document.getElementById("Pin5").innerHTML = data.value ;  
+            break;
+          case "Pin6":
+            document.getElementById("Pin6").innerHTML = data.value ;  
+            break;
+          case "Pin7":
+            document.getElementById("Pin7").innerHTML = data.value ;  
+            break;
+          case "Pin8":
+            document.getElementById("Pin8").innerHTML = data.value ;  
+            break;
+        
+          default:
+            console.log("Unknown channel:", data.channel);
+            break;
+        }
+      }
+
       function Click() {
         fetch("/action", {
         method: "POST",
