@@ -1,28 +1,24 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
-#include <ArduinoJson.hpp>
+#include <ArduinoJson.h> // V7.4.2
+//#include <ArduinoJson.hpp>
 #include <WiFi.h>
-#include <MQTT.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <ESPAsyncWebServer.h>
-#include <AsyncTCP.h>
+#include <MQTT.h> // V2.5.2
+#include <OneWire.h> // V2.3.8
+#include <DallasTemperature.h> // V4.0.6
+#include <ESPAsyncWebServer.h>// V3.9.6
+#include <AsyncTCP.h> // V3.4.10
 #include "LittleFS.h"
-#include <Adafruit_NeoPixel.h>
+#include <Adafruit_NeoPixel.h> // V1.15.4
 #include <ESPmDNS.h>
 
+// board : ESP32 V3.3.7
+
 //Variables to save values from HTML form
-// String ssid;
-// String pass;
-// String mqttserv;
-// String mqttuser;
-// String mqttpass;
-//****** test *************
-String ssid= "blacknet-IOT";
-String pass= "gregoryvk99iot";
-String mqttserv= "192.168.40.40";
-String mqttuser= "gregory";
-String mqttpass= "gregory";
+String ssid;
+String pass;
+String mqttserv;
+String mqttuser;
+String mqttpass;
 
 
 // Search for parameter in HTTP POST request
@@ -49,7 +45,7 @@ const String mqtt_get = "Get";
 // GPIO input count
 const uint8_t GpioInputCount = 8; 
 // GPIO input pin
-const uint8_t GpioInput[] = {2, 11, 10, 1, 0, 7, 6, 5};
+const uint8_t GpioInput[GpioInputCount] = {2, 11, 10, 1, 0, 7, 6, 5};
 // GPIO input status
 volatile bool statusInput[GpioInputCount];
 // GPIO input lastTime
@@ -62,7 +58,7 @@ volatile float statustemp1 = 0;
 // Temperature lastTime
 volatile unsigned long lsastTimeTemp1 = 0;
 // Timer (s) pour envoyer la temperature
-const long timerforsendtemp = 6000; 
+const long timerforsendtemp = 60000; 
 
 // Internal led
 const uint8_t LED_PIN = 8;
@@ -70,7 +66,7 @@ const uint8_t NUM_LEDS = 1;
 // Create rbg pixel
 Adafruit_NeoPixel rgbLed(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 struct RGB {
-    uint8_t r, g, b; // G R B 
+    uint8_t r, g, b;
 };
 // Custom color
 const RGB COLOR_OFF   = {0, 0, 0};
@@ -86,6 +82,8 @@ unsigned long wifiConnPreviousMillis = 0;
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer localServer(80);
+
+// Create websocket sur /WS
 AsyncWebSocket ws("/ws");
 
 // Define MQTT
@@ -105,7 +103,7 @@ bool isMqttConnectToServer = false;
 // ws connection satatus
 bool isWSConnected = false;
 
-//******************************
+//********************************************
 // Connect MQTT
 void mqttconnect() {
   // Check wifi connection
@@ -322,7 +320,6 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 
 // Lsit files
 void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
-  Serial.println("******");
   Serial.printf("Listing directory: %s\r\n", dirname);
 
   File root = fs.open(dirname);
@@ -351,7 +348,6 @@ void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
     }
     file = root.openNextFile();
   }
-  Serial.println("******");
 }
 
 // Delete file
@@ -386,7 +382,7 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
 }
 
 // WS on event
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+void WSonEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
              void *arg, uint8_t *data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
@@ -530,7 +526,7 @@ void setup() {
     });
 
     // Socket event
-    ws.onEvent(onEvent);
+    ws.onEvent(WSonEvent);
     localServer.addHandler(&ws);
     isWSConnected = true;
     
