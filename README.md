@@ -17,7 +17,7 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
   - configurer le websocket
   - changer la couleur de la led en vert
 - Si le ssid est vide
-  -  Initialisation du wifi en mode access point
+  -  Initialisation du wifi en mode access point (ip= 192.168.4.1)
   -  demarrer un serveur local avec les fichiers html pour entrer les parametres de connections wifi et mqtt
   -  changer la couleur de la led en bleu
 - Si le wifi est connecté au routeur
