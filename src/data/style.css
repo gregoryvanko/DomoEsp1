@@ -5,8 +5,13 @@ html {
 }
 
 h1 {
-  font-size: 1.8rem; 
+  font-size: 2.4rem; 
   color: white;
+}
+
+h2 {
+  color: #034078;
+  font-size: 2rem;
 }
 
 p { 
@@ -16,6 +21,16 @@ p {
 .topnav { 
   overflow: hidden; 
   background-color: #0A1128;
+}
+
+.channeltitre {
+  font-weight: bold;
+  margin-right: 10px;
+  font-size: 1.4rem;
+}
+
+.channelvalue {
+  font-size: 1.4rem;
 }
 
 body {  
@@ -28,7 +43,7 @@ body {
 
 .card-grid { 
   max-width: 800px; 
-  margin: 0 auto; 
+  margin: 10px auto; 
   display: grid; 
   grid-gap: 2rem; 
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -37,6 +52,7 @@ body {
 .card { 
   background-color: white; 
   box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
+  padding: 10px;
 }
 
 .card-title { 
