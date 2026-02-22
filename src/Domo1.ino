@@ -9,12 +9,20 @@
 #include <AsyncTCP.h>
 #include "LittleFS.h"
 #include <Adafruit_NeoPixel.h>
+#include <ESPmDNS.h>
 
-//const char* ssid = "blacknet-IOT";
-//const char* pass = "gregoryvk99iot";
-//const char* mqttserv = "192.168.40.40";
-//const char* mqttuser = "gregory";
-//const char* mqttpass = "gregory";
+//Variables to save values from HTML form
+// String ssid;
+// String pass;
+// String mqttserv;
+// String mqttuser;
+// String mqttpass;
+//****** test *************
+String ssid= "blacknet-IOT";
+String pass= "gregoryvk99iot";
+String mqttserv= "192.168.40.40";
+String mqttuser= "gregory";
+String mqttpass= "gregory";
 
 
 // Search for parameter in HTTP POST request
@@ -23,13 +31,6 @@ const char* PARAM_INPUT_2 = "pass";
 const char* PARAM_INPUT_3 = "mqttserv";
 const char* PARAM_INPUT_4 = "mqttuser";
 const char* PARAM_INPUT_5 = "mqttpass";
-
-//Variables to save values from HTML form
-String ssid;
-String pass;
-String mqttserv;
-String mqttuser;
-String mqttpass;
 
 // File paths to save input values permanently
 const char* ssidPath = "/ssid.txt";
@@ -85,6 +86,7 @@ unsigned long wifiConnPreviousMillis = 0;
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer localServer(80);
+AsyncWebSocket ws("/ws");
 
 // Define MQTT
 MQTTClient clientMqtt;
@@ -99,6 +101,9 @@ bool isWifiConnectToRouteur = false;
 
 // mqtt connection satatus
 bool isMqttConnectToServer = false;
+
+// ws connection satatus
+bool isWSConnected = false;
 
 //******************************
 // Connect MQTT
@@ -125,7 +130,7 @@ void mqttconnect() {
     Serial.print(".");
   }
 
-  // Connect to mqtt ToDo
+  // Connect to mqtt
   Serial.print("\nMQTT connecting...");
   while (!clientMqtt.connect("Domo", mqttuser.c_str(), mqttpass.c_str())) {
     currentMillis = millis();
@@ -146,7 +151,7 @@ void mqttconnect() {
     isMqttConnectToServer = false;
   }
 
-  Serial.println("\nconnected!");
+  Serial.println("\nMQTT connected!");
 
   // set isMqttConnectToServer to true
   isMqttConnectToServer = true;
@@ -177,6 +182,24 @@ void messageReceived(String &topic, String &payload) {
   // or push to a queue and handle it in the loop after calling `cliclientMqttent.loop()`.
 }
 
+// Send message to MQTT
+void sendMQTT(String topic, String message){
+  if (isMqttConnectToServer){
+    clientMqtt.publish(mqtt_topic + "/" + topic, message);
+  } else {
+    Serial.println("mqtt client not connected");
+  }
+}
+
+// Send message to ws
+void sendWS(String topic, String message){
+  if (isWSConnected){
+    ws.textAll("{\"channel\":\"" + topic + "\",\"value\":\"" + message + "\"}");
+  } else {
+    Serial.println("ws not connected");
+  }
+}
+
 void SendAllPin(){
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
     // Print pin value
@@ -186,12 +209,15 @@ void SendAllPin(){
     Serial.println(statusInput[thisPin]);
 
     // Send MQTT message
-    clientMqtt.publish(mqtt_topic + "/" + mqtt_topicPin + String(thisPin + 1), String(statusInput[thisPin]));
+    sendMQTT(mqtt_topicPin + String(thisPin + 1), String(statusInput[thisPin]));
+
+    // Send to WS isWSConnected
+    sendWS(mqtt_topicPin + String(thisPin + 1), String(statusInput[thisPin]));
   }
 }
 
 // Analyse change on pinout
-void analyseIn(unsigned long now, uint8_t PinNumer, volatile bool & statusInput, volatile unsigned long & lastTimeIn){
+void analysePin(unsigned long now, uint8_t PinNumer, volatile bool & statusInput, volatile unsigned long & lastTimeIn){
   // Read pin
   bool pin = digitalRead(GpioInput[PinNumer]);
   if (pin != statusInput){
@@ -206,11 +232,10 @@ void analyseIn(unsigned long now, uint8_t PinNumer, volatile bool & statusInput,
       Serial.println(pin);
 
       // Send MQTT message
-      if (isMqttConnectToServer){
-        clientMqtt.publish(mqtt_topic + "/" + mqtt_topicPin + String(PinNumer + 1), String(pin));
-      } else {
-        Serial.println("mqtt client not connected");
-      }
+      sendMQTT(mqtt_topicPin + String(PinNumer + 1), String(pin));
+
+      // Send to WS isWSConnected
+      sendWS(mqtt_topicPin + String(PinNumer + 1), String(pin));
       
     } else if (now < lastTimeIn){
       lastTimeIn=0;    
@@ -233,11 +258,10 @@ void analyseTemp1(unsigned long now){
     Serial.println("ºC");
 
     // Send MQTT message
-    if (isMqttConnectToServer){
-      clientMqtt.publish(mqtt_topic + "/" + mqtt_topicTemp1, String(temperatureC));
-    } else {
-      Serial.println("mqtt client not connected");
-    }
+    sendMQTT(mqtt_topicTemp1, String(temperatureC));
+
+    // Send to WS isWSConnected
+    sendWS(mqtt_topicTemp1, String(temperatureC));
     
   } else if (now < lsastTimeTemp1){
     lsastTimeTemp1=0;    
@@ -350,6 +374,37 @@ bool CheckifSSIDisDefine() {
   }
 }
 
+// WS handle socket message
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  String message = "";
+  for (size_t i = 0; i< len; i++){
+    message += (char)data[i];
+  }
+  Serial.print("WS message: ");
+  Serial.println(message.c_str());
+  // ToDo
+}
+
+// WS on event
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      SendAllPin();
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      handleWebSocketMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
 //******************************
 // setup
 void setup() {
@@ -387,11 +442,16 @@ void setup() {
   initLittleFS();
 
   // Load values saved in LittleFS
-  ssid = readFile(LittleFS, ssidPath);
-  pass = readFile(LittleFS, passPath);
-  mqttserv = readFile(LittleFS, mqttservPath);
-  mqttuser = readFile (LittleFS, mqttuserPath);
-  mqttpass = readFile (LittleFS, mqttpassPath);
+  if(!CheckifSSIDisDefine()) {
+    ssid = readFile(LittleFS, ssidPath);
+    pass = readFile(LittleFS, passPath);
+    mqttserv = readFile(LittleFS, mqttservPath);
+    mqttuser = readFile (LittleFS, mqttuserPath);
+    mqttpass = readFile (LittleFS, mqttpassPath);
+  }
+  
+
+  // Print connection data
   Serial.print("ssid: ");
   Serial.println(ssid);
   Serial.print("pass: ");
@@ -403,9 +463,7 @@ void setup() {
   Serial.print("mqttpass: ");
   Serial.println(mqttpass);
 
-  // setup MQTT
-  clientMqtt.begin(mqttserv.c_str(), net);
-  clientMqtt.onMessage(messageReceived);
+  
 
   // Setup wifi
   if(CheckifSSIDisDefine()) {
@@ -470,6 +528,11 @@ void setup() {
       }
       request->send(200, "text/plain", "Done. ESP will restart");
     });
+
+    // Socket event
+    ws.onEvent(onEvent);
+    localServer.addHandler(&ws);
+    isWSConnected = true;
     
     // Begin local server
     localServer.begin();
@@ -561,6 +624,10 @@ void setup() {
     setColor(COLOR_Blue, 100);
   }
 
+  // setup MQTT
+  clientMqtt.begin(mqttserv.c_str(), net);
+  clientMqtt.onMessage(messageReceived);
+
   // Connect to mqtt
   if (isWifiConnectToRouteur){
     mqttconnect();
@@ -572,6 +639,14 @@ void setup() {
 
   // Liste all file
   listDir(LittleFS, "/", 3);
+
+  // setup ESPmDNS
+  Serial.println("setup : ESPmDNS");
+  if (! MDNS.begin("domo1")){
+    Serial.println("Error to setup ESPmDNS");
+  } else {
+    MDNS.addService("http", "tcp", 80);
+  }
   
   // Send serial done
   Serial.println("setup: done");
@@ -589,6 +664,9 @@ void loop() {
       clientMqtt.loop();
       delay(10);
     }
+    if (isWSConnected){
+      ws.cleanupClients();
+    }
   }
   
   // get now
@@ -599,6 +677,6 @@ void loop() {
 
   // Analyse input pin
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
-    analyseIn(now, thisPin, statusInput[thisPin], lastTimeInput[thisPin]);
+    analysePin(now, thisPin, statusInput[thisPin], lastTimeInput[thisPin]);
   }
 }
