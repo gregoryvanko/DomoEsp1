@@ -72,14 +72,14 @@
       const socket = new WebSocket("ws://" + window.location.hostname + "/ws");
 
       socket.onmessage = (event) => {
-        console.log(event.data)
+        //console.log(event.data)
         let data = JSON.parse(event.data)
         //console.log(data.channel)
         //console.log(data.value)
 
         switch (data.channel) {
           case "Temp1":
-            document.getElementById("Temp1").innerHTML = data.value + "°C" ;
+            document.getElementById("Temp1").innerHTML = data.value + "&#8451;" ;
             break;
           case "Pin1":
             document.getElementById("Pin1").innerHTML = data.value ;  
