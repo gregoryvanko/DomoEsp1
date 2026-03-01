@@ -36,6 +36,7 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
 ## Message MQTT
 - L'ESP32 fait un subscribe sur le topic "Domo1/Get". Si le payload = "All" alors il envoit le status de toutes les pin sur leur topic.
 - L'ESP32 publie le statu d'une pin sur le topic "Domo1/PinX" (ou x est le numéro de la pin allant de 1 à 8). Le payload contient la statu de la pin
+- L'ESP32 publie la temperature de la sonde DS18B20 sur le topic "Domo1/Temp1". Le payload contient la temperature en degré.
 
 ## Pinout ESP32
 ![Alt ESP32](image/ESP32-C6.jpg)
