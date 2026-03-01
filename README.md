@@ -34,15 +34,19 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
 - bleu: wifi en mode access point
 
 ## Message MQTT
+- L'ESP32 fait un subscribe sur le topic "Domo1/Get". Si le payload = "All" alors il envoit le status de toutes les pin sur leur topic.
+- L'ESP32 publie le statu d'une pin sur le topic "Domo1/PinX" (ou x est le numéro de la pin allant de 1 à 8). Le payload contient la statu de la pin
 
 ## Pinout ESP32
 ![Alt ESP32](image/ESP32-C6.jpg)
-- GPIO03 : Sonde de temperature
-- GPIO02 : Pin1
-- GPIO11 : Pin2
-- GPIO10 : Pin3
-- GPIO01 : Pin4
-- GPIO00 : Pin5
-- GPIO07 : Pin6
-- GPIO06 : Pin7
-- GPIO05 : Pin8
+| GPIO   | MQTT   | source   | status   |
+|:------ |:------ |:-------- |:-------- |
+| GPIO03 | Temp1  | sonde DS18B20 | température deg |
+| GPIO02 | Pin1   | Porte garage (aimant) | 0 = porte fermée |
+| GPIO11 | Pin2   | Porte Atelier | 1 = porte fermée |
+| GPIO10 | Pin3   | Porte Fen SAM | 1 = porte fermée |
+| GPIO01 | Pin4   | Porte Fen Cuisine | 1 = porte fermée |
+| GPIO00 | Pin5   | Porte garage (alarme) | 1 = porte fermée |
+| GPIO07 | Pin6   | Armé Absent | 1 = non armé |
+| GPIO06 | Pin7   | Armé Nuit | 1 = non armé |
+| GPIO05 | Pin8   | Porte Entree | 1 = porte fermée |
