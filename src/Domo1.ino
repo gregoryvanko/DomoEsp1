@@ -19,13 +19,6 @@ String pass;
 String mqttserv;
 String mqttuser;
 String mqttpass;
-//****** test *************
-// String ssid= "blacknet-IOT";
-// String pass= "gregoryvk99iot";
-// String mqttserv= "192.168.40.40";
-// String mqttuser= "gregory";
-// String mqttpass= "gregory";
-
 
 // Search for parameter in HTTP POST request
 const char* PARAM_INPUT_1 = "ssid";
