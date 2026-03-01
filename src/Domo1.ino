@@ -19,6 +19,12 @@ String pass;
 String mqttserv;
 String mqttuser;
 String mqttpass;
+//****** test *************
+// String ssid= "blacknet-IOT";
+// String pass= "gregoryvk99iot";
+// String mqttserv= "192.168.40.40";
+// String mqttuser= "gregory";
+// String mqttpass= "gregory";
 
 
 // Search for parameter in HTTP POST request
@@ -50,6 +56,8 @@ const uint8_t GpioInput[GpioInputCount] = {2, 11, 10, 1, 0, 7, 6, 5};
 volatile bool statusInput[GpioInputCount];
 // GPIO input lastTime
 volatile unsigned long lastTimeInput[GpioInputCount];
+// Button est il en transition
+volatile bool ButtonTransition[GpioInputCount];
 
 // GPIO where the DS18B20 is connected to 
 const int oneWireBus = 3;
@@ -76,7 +84,7 @@ const RGB COLOR_Green = {0, 255, 0};
 const RGB COLOR_Yellow = {255, 255, 0}; 
 
 // Dedouncing delay
-const unsigned long DEBOUNCE_DELAY = 50;
+const unsigned long DEBOUNCE_DELAY = 500;
 // Timer variables for wifi connection
 unsigned long wifiConnPreviousMillis = 0;
 
@@ -214,30 +222,46 @@ void SendAllPin(){
   }
 }
 
+// Action a faire lorsque le statu d'une pin change
+void actionPinChange(uint8_t PinNumer, bool pin) {
+  // Print pin value
+  Serial.print("pin ");
+  Serial.print(PinNumer + 1);
+  Serial.print(" : ");
+  Serial.println(pin);
+
+  // Send MQTT message
+  sendMQTT(mqtt_topicPin + String(PinNumer + 1), String(pin));
+
+  // Send to WS isWSConnected
+  sendWS(mqtt_topicPin + String(PinNumer + 1), String(pin));
+}
+
 // Analyse change on pinout
-void analysePin(unsigned long now, uint8_t PinNumer, volatile bool & statusInput, volatile unsigned long & lastTimeIn){
+void analysePin(unsigned long now, uint8_t PinNumer, volatile bool & lastButtonState, volatile unsigned long & lastTimeIn, volatile bool & ButtonInTransition){
   // Read pin
   bool pin = digitalRead(GpioInput[PinNumer]);
-  if (pin != statusInput){
-    if (now - lastTimeIn > DEBOUNCE_DELAY) {
+
+  // Si le status est différent du précédent
+  if (pin != lastButtonState){
+    if (ButtonInTransition == false){
       lastTimeIn = now;
-      statusInput = pin;
-
-      // Print pin value
-      Serial.print("pin ");
-      Serial.print(PinNumer + 1);
-      Serial.print(" : ");
-      Serial.println(pin);
-
-      // Send MQTT message
-      sendMQTT(mqtt_topicPin + String(PinNumer + 1), String(pin));
-
-      // Send to WS isWSConnected
-      sendWS(mqtt_topicPin + String(PinNumer + 1), String(pin));
-      
-    } else if (now < lastTimeIn){
-      lastTimeIn=0;    
+      ButtonInTransition = true;
     }
+  } else {
+    ButtonInTransition = false;
+  }
+  if (now - lastTimeIn > DEBOUNCE_DELAY) {
+    if (pin != lastButtonState){
+      lastButtonState = pin;
+      ButtonInTransition = false;
+      actionPinChange(PinNumer, pin);
+    } 
+  }
+    
+  // reste listtimin after reste du now
+  if (now < lastTimeIn){
+    lastTimeIn=0;    
   }
 }
 
@@ -414,20 +438,20 @@ void setup() {
   delay(3000);
   Serial.println("\nsetup : start");
 
-  // Setup Pin
+  // Setup pinout
   Serial.println("setup : pinout");
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
     pinMode(GpioInput[thisPin], INPUT_PULLUP);
   }
 
-  // Get pin status
+  // Pin status
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
-    statusInput[thisPin]= digitalRead(GpioInput[0]);
-  }
-
-  // Set lastTimeInput array to 0
-  for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
+    // Get pin status
+    statusInput[thisPin]= digitalRead(GpioInput[thisPin]);
+    // Set lastTimeInput array to 0
     lastTimeInput[thisPin]= 0;
+    // Set ButtonTransition array to 0
+    ButtonTransition[thisPin]= false;
   }
 
   // setup the DS18B20 sensor
@@ -673,6 +697,6 @@ void loop() {
 
   // Analyse input pin
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
-    analysePin(now, thisPin, statusInput[thisPin], lastTimeInput[thisPin]);
+    analysePin(now, thisPin, statusInput[thisPin], lastTimeInput[thisPin], ButtonTransition[thisPin]);
   }
 }
