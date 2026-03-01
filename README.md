@@ -32,3 +32,17 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
 ## Couleur de la led
 - vert: wifi connecté au routeur
 - bleu: wifi en mode access point
+
+## Message MQTT
+
+## Pinout ESP32
+![Alt ESP32](image/ESP32-C6.jpg)
+- GPIO03 : Sonde de temperature
+- GPIO02 : Pin1
+- GPIO11 : Pin2
+- GPIO10 : Pin3
+- GPIO01 : Pin4
+- GPIO00 : Pin5
+- GPIO07 : Pin6
+- GPIO06 : Pin7
+- GPIO05 : Pin8
