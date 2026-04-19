@@ -44,7 +44,7 @@ const String mqtt_get = "Get";
 // GPIO input count
 const uint8_t GpioInputCount = 8; 
 // GPIO input pin
-const uint8_t GpioInput[GpioInputCount] = {2, 11, 10, 1, 0, 7, 6, 5};
+const uint8_t GpioInput[GpioInputCount] = {2, 11, 10, 1, 0, 6, 5, 4};
 // GPIO input status
 volatile bool statusInput[GpioInputCount];
 // GPIO input lastTime
@@ -75,6 +75,15 @@ const RGB COLOR_Blue = {0, 0, 255};
 const RGB COLOR_Red = {255, 0, 0}; 
 const RGB COLOR_Green = {0, 255, 0}; 
 const RGB COLOR_Yellow = {255, 255, 0}; 
+RGB COLOR_Status = {0, 0, 0};
+// Blink last time
+volatile unsigned long lsastTimeBlink = 0;
+// Timer (s) for blinking led off
+const long timerforblinkOff = 10000; 
+// Timer (s) for blinking led on
+const long timerforblinkOn = 1000; 
+// current status of blinking led
+bool isLedOn = true;
 
 // Dedouncing delay
 const unsigned long DEBOUNCE_DELAY = 500;
@@ -418,6 +427,28 @@ void WSonEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
   }
 }
 
+void blinkLed(unsigned long now){
+  long timer = 0;
+  if (isLedOn){
+    timer = timerforblinkOn;
+  } else {
+    timer = timerforblinkOff;
+  }
+
+  if (now - lsastTimeBlink > timer){
+    lsastTimeBlink = now;
+    if (isLedOn){
+      isLedOn = false;
+      setColor(COLOR_OFF, 100);
+    } else {
+      isLedOn = true;
+       setColor(COLOR_Status, 100);
+    }
+  } else if (now < lsastTimeBlink){
+    lsastTimeBlink=0;    
+  }
+}
+
 //******************************
 // setup
 void setup() {
@@ -550,8 +581,9 @@ void setup() {
     // Begin local server
     localServer.begin();
 
-    // Set led color to bleu
-    setColor(COLOR_Green, 100);
+    // Set led color to green
+    COLOR_Status = COLOR_Green;
+    setColor(COLOR_Status, 100);
 
     // set isWifiConnectToRouteur to true
     isWifiConnectToRouteur = true;
@@ -634,7 +666,8 @@ void setup() {
     localServer.begin();
     
     // Set led color to bleu
-    setColor(COLOR_Blue, 100);
+    COLOR_Status = COLOR_Blue;
+    setColor(COLOR_Status, 100);
   }
 
   // setup MQTT
@@ -670,6 +703,10 @@ void setup() {
 void loop() {
   // Si le wifi est connecté à un routeur
   if (isWifiConnectToRouteur){
+    // Si on a perdu la connection au serveur MQTT
+    if (!clientMqtt.connected()) {
+      isMqttConnectToServer = false;
+    }
     // Validation of mqtt connection
     if (isMqttConnectToServer == false) {
       mqttconnect();
@@ -692,4 +729,7 @@ void loop() {
   for (int thisPin = 0; thisPin < GpioInputCount; thisPin++) {
     analysePin(now, thisPin, statusInput[thisPin], lastTimeInput[thisPin], ButtonTransition[thisPin]);
   }
+
+  // Blink Led
+  blinkLed(now);
 }
