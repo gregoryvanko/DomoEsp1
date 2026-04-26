@@ -40,7 +40,7 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
 - L'ESP32 publie la temperature de la sonde DS18B20 sur le topic "Domo1/Temp1". Le payload contient la temperature en degré.
 
 ## Pinout ESP32
-![Alt ESP32](image/ESP32-C6.jpg)
+![Alt ESP32](Image/ESP32-C6.jpg)
 | GPIO   | MQTT   | source   | status   |
 |:------ |:------ |:-------- |:-------- |
 | GPIO03 | Temp1  | sonde DS18B20 | température deg |
