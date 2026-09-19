@@ -1,0 +1,26 @@
+# Arduino IDE
+*.ino.d
+*.elf
+*.hex
+*.bin
+*.map
+*.eep
+*.lst
+
+# Arduino CLI / build artifacts
+build/
+arduino-build/
+out/
+
+# PlatformIO
+.pio/
+.pioenvs/
+.clangd/
+
+# IDE and editor files
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
