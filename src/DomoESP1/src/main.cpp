@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <OneWire.h> 
+#include <DallasTemperature.h> 
 
 // put function declarations here:
 int myFunction(int, int);
