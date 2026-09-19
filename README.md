@@ -1,5 +1,5 @@
 # DomoEsp1
-Code pour un esp32 permettant d'envoyer sur un broket mqtt le status de 8 pin et une temperature.
+Code pour un esp32 permettant d'envoyer sur un broker mqtt le status de 8 pin et une temperature.
 Le statut des pin et de la temperature est visible sur une page web hébergée sur l'ESP32 via websocket.
 La valeur d'une pin est envoyée sur le broker mqtt (et via websocket) lors du changement d'état de cette pin.
 La valeur de la température est envoyée sur le borker mqtt (et via websocket) toutes les 60sec
