@@ -41,7 +41,7 @@ La valeur de la température est envoyée sur le borker mqtt (et via websocket) 
 
 ## Pinout ESP32
 ![Alt ESP32](Image/ESP32-C6.jpg)
-GPIO 0, 1, 2, 3, 6, 7, 10, 11 et 18
+GPIO 13, 14, 16, 17, 18, 19, 21, 22, 23
 | GPIO   | MQTT   | source   | status   |
 |:------ |:------ |:-------- |:-------- |
 | GPIO03 | Temp1  | sonde DS18B20 | température deg |
