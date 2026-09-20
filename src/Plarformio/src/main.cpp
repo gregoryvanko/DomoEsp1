@@ -6,11 +6,21 @@
 Button bouton1(13, false, 50);
 Button bouton2(14, false, 50);
 
-// Action des bouttons
-
 
 // Deniere mesure (ms)
 int32_t lastMesure = 0;
+
+// Action lors d'un chengement d'état se réalise sur un bouton
+void ActionOnButtonChange(uint8_t PinNumer, bool pinvalue) {
+  // Print pin value
+  Serial.print("pin ");
+  Serial.print(PinNumer);
+  Serial.print(" : ");
+  Serial.println(pinvalue);
+
+  // Send MQTT message
+  //sendMQTT(mqtt_topicPin + String(PinNumer), String(pinvalue));
+}
 
 
 void setup() {
@@ -21,11 +31,11 @@ void setup() {
   bouton2.begin();
 
 
-  bouton1.onLow([]()  { Serial.println("Bouton 1 LOW");  });
-  bouton1.onHigh([]() { Serial.println("Bouton 1 HIGH"); });
+  bouton1.onLow([]()  { ActionOnButtonChange(1, 0);  });
+  bouton1.onHigh([]() { ActionOnButtonChange(1, 1); });
 
-  bouton2.onLow([]()  { Serial.println("Bouton 2 LOW");  });
-  bouton2.onHigh([]() { Serial.println("Bouton 2 HIGH"); });
+  bouton2.onLow([]()  { ActionOnButtonChange(2, 0);  });
+  bouton2.onHigh([]() { ActionOnButtonChange(2, 1); });
 }
 
 void loop() {
