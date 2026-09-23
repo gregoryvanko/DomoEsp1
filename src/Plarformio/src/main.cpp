@@ -4,16 +4,16 @@
 #include "Button.h"
 
 // Definition du wifi
-WifiAuto wifi;                       // bouton BOOT (GPIO 0), AP "ESP32-WifiAuto"
-// WifiAuto wifi(4, "MonESP32");     // ou une autre GPIO / un autre nom d'AP
+WifiAuto wifi(0, "ESP32-Garage", "Domo/status");
 
 // Definition des bouttons
 Button bouton1(13, false, 50);
 Button bouton2(14, false, 50);
 
-
-// Deniere mesure (ms)
-int32_t lastMesure = 0;
+// Definition du callback pour la reception des messages MQTT
+void onMessage(const String& topic, const String& payload) {
+  Serial.println("Recu sur " + topic + " : " + payload);
+}
 
 
 // Action lors d'un chengement d'état se réalise sur un bouton
@@ -28,10 +28,20 @@ void ActionOnButtonChange(uint8_t PinNumer, bool pinvalue) {
   //sendMQTT(mqtt_topicPin + String(PinNumer), String(pinvalue));
 }
 
+// Deniere mesure (ms)
+int32_t lastMesure = 0;
 
 void setup() {
   Serial.begin(CONFIG_BAUDRATE);
   delay(1000);
+
+  // Definition du callback pour la reception des messages MQTT
+  wifi.setMqttMessageCallback(onMessage);
+
+  // Definition du callback pour la connexion au broker MQTT
+  wifi.onMqttConnected([]() {
+    wifi.mqttSubscribe("Domo/Get");
+  });
 
   // Start WifiAuto
   wifi.begin();
@@ -62,5 +72,6 @@ void loop() {
   if (now - lastMesure >= CONFIG_MESURE_INTERVAL){
     lastMesure = now;
     //Serial.println("Hello, World!");
+    wifi.mqttPublish("Domo/temperature", String(21.5 , 2));
   }
 }

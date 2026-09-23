@@ -1,27 +1,42 @@
 #include "WifiAuto.h"
+#include <uri/UriGlob.h>
 #include <stdarg.h>
 
-// Espace de noms et clés en mémoire flash (NVS)
+// Espace de noms et clés en mémoire flash (NVS) — configuration WiFi
 static const char* NVS_NAMESPACE = "wifiauto";
 static const char* NVS_KEY_SSID  = "ssid";
 static const char* NVS_KEY_PASS  = "pass";
 static const char* NVS_KEY_UNVERIFIED = "unverified";  // identifiants jamais validés par une connexion
 
-// Délai avant redémarrage après l'enregistrement, pour laisser partir la réponse HTTP
+// Espace de noms et clés en mémoire flash (NVS) — configuration MQTT (séparé du WiFi :
+// l'effacement des identifiants WiFi via le bouton ne doit pas effacer la config MQTT)
+static const char* NVS_MQTT_NAMESPACE = "wifiauto_mqtt";
+static const char* MQTT_KEY_HOST = "host";
+static const char* MQTT_KEY_PORT = "port";
+static const char* MQTT_KEY_CID  = "cid";
+static const char* MQTT_KEY_USER = "user";
+static const char* MQTT_KEY_PASS = "pass";
+static const char* MQTT_KEY_VERIFIED = "verified";  // la config a déjà réussi à se connecter une fois
+
+// Délai avant redémarrage après l'enregistrement WiFi, pour laisser partir la réponse HTTP
 static const uint32_t RESTART_DELAY_MS = 1500;
+
+// Taille max d'un paquet MQTT (header + topic + payload)
+static const uint16_t MQTT_BUFFER_SIZE = 512;
 
 static const char PAGE_HEAD[] PROGMEM =
   "<!DOCTYPE html><html lang='fr'><head><meta charset='utf-8'>"
   "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-  "<title>Configuration WiFi</title><style>"
+  "<title>Configuration ESP32</title><style>"
   "body{font-family:sans-serif;background:#f2f2f2;margin:0;padding:16px}"
   ".card{max-width:380px;margin:24px auto;background:#fff;padding:20px;border-radius:10px;"
   "box-shadow:0 2px 8px rgba(0,0,0,.15)}"
   "h1{font-size:20px;margin-top:0}label{display:block;margin:14px 0 4px;font-size:14px}"
-  "input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:10px;"
+  "input[type=text],input[type=password],input[type=number]{width:100%;box-sizing:border-box;padding:10px;"
   "font-size:16px;border:1px solid #bbb;border-radius:6px}"
   "button{width:100%;margin-top:20px;padding:12px;font-size:16px;border:0;border-radius:6px;"
-  "background:#0a7cff;color:#fff}.err{color:#c00}.opt{font-size:13px;margin-top:8px}"
+  "background:#0a7cff;color:#fff}.err{color:#c00}.ok{color:#080}.opt{font-size:13px;margin-top:8px}"
+  "a{color:#0a7cff}"
   "</style></head><body><div class='card'>";
 
 static const char PAGE_TAIL[] PROGMEM = "</div></body></html>";
@@ -39,7 +54,7 @@ static const char PAGE_FORM[] PROGMEM =
   " <label for='c' style='display:inline'>Afficher le mot de passe</label></div>"
   "<button type='submit'>Enregistrer</button></form>";
 
-// Le SSID vient de l'utilisateur : on l'échappe avant de l'insérer dans la page
+// Le SSID/topic/etc. vient de l'utilisateur : on l'échappe avant de l'insérer dans une page
 static String htmlEscape(const String& in) {
   String out;
   for (size_t i = 0; i < in.length(); i++) {
@@ -55,8 +70,23 @@ static String htmlEscape(const String& in) {
   return out;
 }
 
-WifiAuto::WifiAuto(uint8_t buttonPin, const char* apName)
-  : _buttonPin(buttonPin), _apName(apName), _server(80) {}
+WifiAuto* WifiAuto::_instance = nullptr;
+
+WifiAuto::WifiAuto(uint8_t buttonPin, const char* apName, const char* mqttStatusTopic)
+  : _buttonPin(buttonPin), _apName(apName), _server(80),
+    _mqttClient(_mqttWifiClient), _mqttStatusTopic(mqttStatusTopic ? mqttStatusTopic : "")
+{
+  // Une seule instance de WifiAuto peut utiliser MQTT : PubSubClient n'accepte pas de
+  // callback membre, seulement une fonction statique (voir _staticMqttCallback)
+  _instance = this;
+
+  _mqttClient.setCallback(_staticMqttCallback);
+  _mqttClient.setBufferSize(MQTT_BUFFER_SIZE);
+}
+
+// ---------------------------------------------------------------------------
+// Réglages WiFi
+// ---------------------------------------------------------------------------
 
 void WifiAuto::setButton(uint8_t pin, bool activeLow, bool usePullUp) {
   _buttonPin       = pin;
@@ -75,6 +105,33 @@ void WifiAuto::setPortalIP(IPAddress ip) { _apIP = ip; }
 void WifiAuto::setHostname(const char* hostname)  { _hostname = hostname; }
 void WifiAuto::onConnected(Callback callback)     { _onConnected = callback; }
 void WifiAuto::onDisconnected(Callback callback)  { _onDisconnected = callback; }
+
+// ---------------------------------------------------------------------------
+// Réglages MQTT
+// ---------------------------------------------------------------------------
+
+void WifiAuto::setMqttCredentials(const char* username, const char* password) {
+  _mqttUsername = username ? username : "";
+  _mqttPassword = password ? password : "";
+}
+
+void WifiAuto::setMqttLastWill(const char* topic, const char* message, bool retain, uint8_t qos) {
+  _lwtTopic   = topic ? topic : "";
+  _lwtMessage = message ? message : "";
+  _lwtRetain  = retain;
+  _lwtQos     = qos;
+}
+
+void WifiAuto::setMqttMessageCallback(MqttMessageCallback callback) { _mqttMessageCallback = callback; }
+void WifiAuto::setMqttReconnectInterval(uint32_t ms) { _mqttReconnectMs = ms; }
+void WifiAuto::setMqttStatusInterval(uint32_t ms)    { _mqttStatusIntervalMs = ms; }
+void WifiAuto::setMqttMaxRetries(uint8_t retries)    { _mqttMaxRetries = retries; }
+void WifiAuto::onMqttConnected(Callback callback)    { _onMqttConnected = callback; }
+void WifiAuto::onMqttDisconnected(Callback callback) { _onMqttDisconnected = callback; }
+
+// ---------------------------------------------------------------------------
+// Cycle de vie
+// ---------------------------------------------------------------------------
 
 void WifiAuto::begin() {
   if (_buttonActiveLow && _buttonPullUp) {
@@ -95,6 +152,23 @@ void WifiAuto::begin() {
   }
 
   loadCredentials();
+  loadMqttConfig();
+
+  // Les routes HTTP sont enregistrées une seule fois ; seul le mode (AP ou station)
+  // change entre startPortal() et startStation(), qui appellent chacun _server.begin()
+  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
+  _server.on("/save", HTTP_POST, [this]() { handleSave(); });
+  _server.on("/config", HTTP_GET, [this]() { handleConfig(); });
+  _server.on("/config", HTTP_POST, [this]() { handleConfigSave(); });
+  _server.on("/config/clear", HTTP_POST, [this]() { handleConfigClear(); });
+  // Doit être enregistrée en dernier : ce joker (n'importe quelle URI/méthode) ne capture
+  // que ce qu'aucune route précédente n'a matché (ex. requêtes de détection de portail
+  // captif émises par les téléphones : /generate_204, /hotspot-detect.html, /ncsi.txt...).
+  // Sans elle, ces requêtes ne matchent aucun handler et WebServer logue lui-même
+  // "request handler not found" (niveau E) avant de retomber sur onNotFound() ci-dessous ;
+  // en fournissant un handler qui matche toujours, ce log interne n'apparaît plus.
+  _server.on(UriGlob("*"), HTTP_ANY, [this]() { handleNotFound(); });
+  _server.onNotFound([this]() { handleNotFound(); });  // filet de sécurité, ne devrait plus être atteint
 
   if (_ssid.length() > 0) {
     startStation();
@@ -113,9 +187,12 @@ void WifiAuto::update() {
 
   if (_portalActive) {
     _dns.processNextRequest();
-    _server.handleClient();
-  } else {
+  }
+  _server.handleClient();
+
+  if (!_portalActive) {
     handleStation();
+    handleMqtt();
   }
 }
 
@@ -227,7 +304,7 @@ void WifiAuto::onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) 
 }
 
 // ---------------------------------------------------------------------------
-// Mémoire
+// Mémoire — WiFi
 // ---------------------------------------------------------------------------
 
 void WifiAuto::loadCredentials() {
@@ -258,7 +335,7 @@ void WifiAuto::markVerified() {
 }
 
 // ---------------------------------------------------------------------------
-// Modes de fonctionnement
+// Modes de fonctionnement WiFi
 // ---------------------------------------------------------------------------
 
 void WifiAuto::startStation() {
@@ -275,12 +352,13 @@ void WifiAuto::startStation() {
   WiFi.begin(_ssid.c_str(), _password.c_str());
   _lastAttemptMs = millis();
   _retryCount = 0;
+
+  _server.begin();
 }
 
 // Le réseau saisi est injoignable (mot de passe faux ?) : on l'oublie et on rouvre le portail
 void WifiAuto::fallbackToPortal() {
-  debugPrintf("Echec de connexion a %s (dernier motif : %s), retour au portail de configuration",
-              _ssid.c_str(), disconnectReasonText(_lastDisconnectReason));
+  debugPrintf("Echec de connexion a %s, retour au portail de configuration", _ssid.c_str());
 
   _failedSsid = _ssid;
   clearCredentials();
@@ -299,9 +377,6 @@ void WifiAuto::startPortal() {
   // Toute résolution DNS pointe vers l'ESP32 : le portail s'ouvre automatiquement
   _dns.start(53, "*", WiFi.softAPIP());
 
-  _server.on("/", HTTP_GET, [this]() { handleRoot(); });
-  _server.on("/save", HTTP_POST, [this]() { handleSave(); });
-  _server.onNotFound([this]() { handleNotFound(); });
   _server.begin();
 
   debugPrintf("Point d'acces \"%s\" actif - page de configuration : http://%s",
@@ -382,16 +457,293 @@ void WifiAuto::handleStation() {
 }
 
 // ---------------------------------------------------------------------------
-// Pages web du portail
+// Mémoire — MQTT
+// ---------------------------------------------------------------------------
+
+void WifiAuto::loadMqttConfig() {
+  _prefs.begin(NVS_MQTT_NAMESPACE, false);
+  _mqttHost     = _prefs.isKey(MQTT_KEY_HOST) ? _prefs.getString(MQTT_KEY_HOST, "") : "";
+  _mqttPort     = _prefs.isKey(MQTT_KEY_PORT) ? _prefs.getUShort(MQTT_KEY_PORT, 1883) : 1883;
+  _mqttClientId = _prefs.isKey(MQTT_KEY_CID)  ? _prefs.getString(MQTT_KEY_CID, "")  : "";
+  // Un identifiant/mot de passe déjà réglé par setMqttCredentials() n'est écrasé que si
+  // la mémoire contient une valeur (permet de définir un défaut avant begin())
+  if (_prefs.isKey(MQTT_KEY_USER)) _mqttUsername = _prefs.getString(MQTT_KEY_USER, "");
+  if (_prefs.isKey(MQTT_KEY_PASS)) _mqttPassword = _prefs.getString(MQTT_KEY_PASS, "");
+  _mqttVerified = _prefs.getBool(MQTT_KEY_VERIFIED, false);
+  _prefs.end();
+
+  if (hasMqttConfig()) {
+    _mqttClient.setServer(_mqttHost.c_str(), _mqttPort);
+  }
+}
+
+// Une configuration tout juste saisie est enregistrée comme "non validée" : on ne sait pas
+// encore si elle est correcte tant qu'une connexion n'a pas réussi (voir mqttConnectAttempt())
+void WifiAuto::saveMqttConfig(const String& host, uint16_t port, const String& clientId,
+                               const String& username, const String& password) {
+  _prefs.begin(NVS_MQTT_NAMESPACE, false);
+  _prefs.putString(MQTT_KEY_HOST, host);
+  _prefs.putUShort(MQTT_KEY_PORT, port);
+  _prefs.putString(MQTT_KEY_CID, clientId);
+  _prefs.putString(MQTT_KEY_USER, username);
+  _prefs.putString(MQTT_KEY_PASS, password);
+  _prefs.putBool(MQTT_KEY_VERIFIED, false);
+  _prefs.end();
+
+  _mqttHost     = host;
+  _mqttPort     = port;
+  _mqttClientId = clientId;
+  _mqttUsername = username;
+  _mqttPassword = password;
+  _mqttVerified = false;
+  _mqttFailCount = 0;
+}
+
+void WifiAuto::clearMqttConfig() {
+  // Avant de couper la connexion, on publie nous-mêmes "offline" (retenu) sur le topic de
+  // statut : sinon le broker ne l'affiche que via le testament, déclenché par le driver MQTT
+  // après un délai (keep-alive), ce qui laisserait "online" affiché à tort entre-temps
+  if (_mqttClient.connected() && _mqttStatusTopic.length() > 0) {
+    bool ok = _mqttClient.publish(_mqttStatusTopic.c_str(), "offline", true);
+    debugPrintf("[MQTT] Statut publie sur '%s' : offline (retain) -> %s",
+                _mqttStatusTopic.c_str(), ok ? "OK" : "ERREUR");
+  }
+
+  if (_mqttClient.connected()) _mqttClient.disconnect();
+  _mqttWasConnected = false;
+  _mqttVerified = false;
+  _mqttFailCount = 0;
+
+  _prefs.begin(NVS_MQTT_NAMESPACE, false);
+  _prefs.clear();
+  _prefs.end();
+
+  _mqttHost = "";
+  _mqttPort = 1883;
+  _mqttClientId = "";
+  _mqttUsername = "";
+  _mqttPassword = "";
+
+  debugPrintf("[MQTT] Configuration effacee");
+}
+
+// Applique la config MQTT courante au client et force une reconnexion au prochain update()
+void WifiAuto::applyMqttConfig() {
+  if (hasMqttConfig()) {
+    _mqttClient.setServer(_mqttHost.c_str(), _mqttPort);
+  }
+  if (_mqttClient.connected()) _mqttClient.disconnect();
+  _mqttWasConnected = false;
+  _lastMqttAttemptMs = 0;  // force une tentative dès le prochain update()
+}
+
+// La configuration vient de se connecter avec succès pour la première fois : elle est
+// désormais considérée comme correcte et ne sera plus jamais effacée automatiquement
+void WifiAuto::markMqttVerified() {
+  _mqttVerified = true;
+  _mqttFailCount = 0;
+  _prefs.begin(NVS_MQTT_NAMESPACE, false);
+  _prefs.putBool(MQTT_KEY_VERIFIED, true);
+  _prefs.end();
+}
+
+// ---------------------------------------------------------------------------
+// MQTT : connexion, reconnexion, statut
+// ---------------------------------------------------------------------------
+
+bool WifiAuto::hasMqttConfig() const { return _mqttHost.length() > 0; }
+String WifiAuto::getMqttHost() const { return _mqttHost; }
+uint16_t WifiAuto::getMqttPort() const { return _mqttPort; }
+bool WifiAuto::isMqttConnected() { return _mqttClient.connected(); }
+int WifiAuto::getMqttStateCode() { return _mqttClient.state(); }
+String WifiAuto::getMqttStateText() { return mqttStateTextFor(_mqttClient.state()); }
+
+// Identifiant client par défaut si aucun n'est configuré, dérivé de l'adresse MAC
+String WifiAuto::defaultMqttClientId() {
+  uint64_t mac = ESP.getEfuseMac();
+  char buf[20];
+  snprintf(buf, sizeof(buf), "WifiAuto-%06X", (unsigned int)(mac & 0xFFFFFF));
+  return String(buf);
+}
+
+const char* WifiAuto::mqttStateTextFor(int state) {
+  switch (state) {
+    case -4: return "delai de connexion depasse";
+    case -3: return "connexion perdue";
+    case -2: return "echec de connexion au serveur";
+    case -1: return "deconnecte";
+    case 0:  return "connecte";
+    case 1:  return "protocole MQTT non supporte par le serveur";
+    case 2:  return "identifiant client rejete par le serveur";
+    case 3:  return "serveur MQTT indisponible";
+    case 4:  return "identifiants incorrects";
+    case 5:  return "non autorise";
+    default: return "etat inconnu";
+  }
+}
+
+void WifiAuto::handleMqtt() {
+  if (!hasMqttConfig()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  if (_mqttClient.connected()) {
+    _mqttClient.loop();
+    if (_mqttStatusTopic.length() > 0 && millis() - _lastMqttStatusMs >= _mqttStatusIntervalMs) {
+      publishMqttStatus();
+    }
+    return;
+  }
+
+  if (_mqttWasConnected) {
+    _mqttWasConnected = false;
+    debugPrintf("[MQTT] Connexion perdue (etat=%d : %s)",
+                _mqttClient.state(), mqttStateTextFor(_mqttClient.state()));
+    if (_onMqttDisconnected) _onMqttDisconnected();
+  }
+
+  if (millis() - _lastMqttAttemptMs < _mqttReconnectMs) return;
+  _lastMqttAttemptMs = millis();
+  mqttConnectAttempt();
+}
+
+void WifiAuto::mqttConnectAttempt() {
+  String clientId = _mqttClientId.length() > 0 ? _mqttClientId : defaultMqttClientId();
+
+  if (_mqttVerified) {
+    debugPrintf("[MQTT] Connexion a %s:%u en tant que '%s'...",
+                _mqttHost.c_str(), _mqttPort, clientId.c_str());
+  } else {
+    debugPrintf("[MQTT] Connexion a %s:%u en tant que '%s'... (tentative %u/%u)",
+                _mqttHost.c_str(), _mqttPort, clientId.c_str(), _mqttFailCount + 1, _mqttMaxRetries);
+  }
+
+  const char* user = _mqttUsername.length() > 0 ? _mqttUsername.c_str() : nullptr;
+  const char* pass = _mqttPassword.length() > 0 ? _mqttPassword.c_str() : nullptr;
+
+  // Testament : celui défini par setMqttLastWill() prime sur le testament automatique
+  // ("offline", retenu) construit à partir du topic de statut du constructeur
+  bool customLwt = _lwtTopic.length() > 0;
+  const char* willTopic   = customLwt ? _lwtTopic.c_str()
+                          : (_mqttStatusTopic.length() > 0 ? _mqttStatusTopic.c_str() : nullptr);
+  const char* willMessage = customLwt ? _lwtMessage.c_str() : "offline";
+  bool        willRetain  = customLwt ? _lwtRetain : true;
+  uint8_t     willQos     = customLwt ? _lwtQos : 1;
+
+  bool ok;
+  if (willTopic) {
+    ok = user ? _mqttClient.connect(clientId.c_str(), user, pass, willTopic, willQos, willRetain, willMessage)
+              : _mqttClient.connect(clientId.c_str(), nullptr, nullptr, willTopic, willQos, willRetain, willMessage);
+  } else {
+    ok = user ? _mqttClient.connect(clientId.c_str(), user, pass)
+              : _mqttClient.connect(clientId.c_str());
+  }
+
+  if (ok) {
+    debugPrintf("[MQTT] Connecte.");
+    _mqttWasConnected = true;
+    if (!_mqttVerified) markMqttVerified();
+    publishMqttStatus();
+    if (_onMqttConnected) _onMqttConnected();
+    return;
+  }
+
+  // Configuration déjà validée par le passé : un échec ponctuel n'est qu'une coupure
+  // temporaire (broker éteint, réseau...), on continue de réessayer indéfiniment
+  if (_mqttVerified) {
+    debugPrintf("[MQTT] Echec (etat=%d : %s). Nouvelle tentative dans %u ms...",
+                _mqttClient.state(), mqttStateTextFor(_mqttClient.state()), _mqttReconnectMs);
+    return;
+  }
+
+  // Configuration jamais validée : après plusieurs échecs, elle est probablement incorrecte
+  // (mauvaise adresse, mauvais identifiants...) plutôt que temporairement indisponible
+  _mqttFailCount++;
+  debugPrintf("[MQTT] Echec (etat=%d : %s), tentative %u/%u",
+              _mqttClient.state(), mqttStateTextFor(_mqttClient.state()), _mqttFailCount, _mqttMaxRetries);
+
+  if (_mqttFailCount >= _mqttMaxRetries) {
+    debugPrintf("[MQTT] Echec apres %u tentatives : la configuration semble incorrecte, "
+                "suppression de la configuration MQTT.", _mqttFailCount);
+    clearMqttConfig();
+  }
+}
+
+// Publie l'état "online" (retenu) sur le topic de statut, s'il est configuré
+void WifiAuto::publishMqttStatus() {
+  if (_mqttStatusTopic.length() == 0 || !_mqttClient.connected()) return;
+
+  bool ok = _mqttClient.publish(_mqttStatusTopic.c_str(), "online", true);
+  debugPrintf("[MQTT] Statut publie sur '%s' : online (retain) -> %s",
+              _mqttStatusTopic.c_str(), ok ? "OK" : "ERREUR");
+  _lastMqttStatusMs = millis();
+}
+
+bool WifiAuto::mqttPublish(const char* topic, const String& payload, bool retain, uint8_t qos) {
+  return mqttPublish(topic, payload.c_str(), retain, qos);
+}
+
+bool WifiAuto::mqttPublish(const char* topic, const char* payload, bool retain, uint8_t qos) {
+  (void)qos;  // PubSubClient ne publie qu'en QoS 0 ; conservé pour compatibilité d'API
+  // Pas de log ici : appeler publish() alors que le broker n'est pas encore connecté est un
+  // cas normal (ex. publication périodique dans loop()), pas une anomalie à tracer
+  if (!_mqttClient.connected()) return false;
+
+  bool ok = _mqttClient.publish(topic, payload, retain);
+  debugPrintf("[MQTT] publish('%s', '%s', retain=%d) -> %s", topic, payload, retain, ok ? "OK" : "ERREUR");
+  return ok;
+}
+
+bool WifiAuto::mqttSubscribe(const char* topic, uint8_t qos) {
+  // Pas de log ici : appeler subscribe() alors que le broker n'est pas encore connecté est un
+  // cas normal, pas une anomalie à tracer
+  if (!_mqttClient.connected()) return false;
+
+  bool ok = _mqttClient.subscribe(topic, qos);
+  debugPrintf("[MQTT] subscribe('%s', qos=%u) -> %s", topic, qos, ok ? "OK" : "ERREUR");
+  return ok;
+}
+
+bool WifiAuto::mqttUnsubscribe(const char* topic) {
+  if (!_mqttClient.connected()) return false;
+  bool ok = _mqttClient.unsubscribe(topic);
+  debugPrintf("[MQTT] unsubscribe('%s') -> %s", topic, ok ? "OK" : "ERREUR");
+  return ok;
+}
+
+// Adaptateur statique -> instance : PubSubClient n'accepte pas de callback membre
+void WifiAuto::_staticMqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (!_instance || !_instance->_mqttMessageCallback) return;
+
+  String topicStr(topic);
+  String payloadStr;
+  payloadStr.reserve(length);
+  for (unsigned int i = 0; i < length; i++) {
+    payloadStr += static_cast<char>(payload[i]);
+  }
+
+  _instance->_mqttMessageCallback(topicStr, payloadStr);
+}
+
+// ---------------------------------------------------------------------------
+// Pages web — portail WiFi (mode point d'accès uniquement)
 // ---------------------------------------------------------------------------
 
 void WifiAuto::handleRoot() {
   String html = FPSTR(PAGE_HEAD);
-  if (_failedSsid.length() > 0) {
-    html += "<p class='err'>Connexion impossible au réseau <b>" + htmlEscape(_failedSsid) +
-            "</b>. Vérifiez le nom et le mot de passe puis réessayez.</p>";
+
+  if (_portalActive) {
+    if (_failedSsid.length() > 0) {
+      html += "<p class='err'>Connexion impossible au réseau <b>" + htmlEscape(_failedSsid) +
+              "</b>. Vérifiez le nom et le mot de passe puis réessayez.</p>";
+    }
+    html += FPSTR(PAGE_FORM);
+  } else {
+    // En mode station, la racine sert de point d'entrée vers la configuration MQTT
+    html += "<h1>ESP32 connecté</h1><p>Réseau WiFi : <b>" + htmlEscape(_ssid) + "</b><br>"
+            "IP : " + WiFi.localIP().toString() + "</p>"
+            "<p><a href='/config'>Configuration MQTT</a></p>";
   }
-  html += FPSTR(PAGE_FORM);
+
   html += FPSTR(PAGE_TAIL);
   _server.send(200, "text/html; charset=utf-8", html);
 }
@@ -427,8 +779,137 @@ void WifiAuto::handleSave() {
   _restartAtMs = millis() + RESTART_DELAY_MS;
 }
 
-// Redirige toute URL inconnue (tests de connectivité des téléphones, etc.) vers le portail
+// Redirige toute URL inconnue en mode point d'accès (tests de connectivité des téléphones,
+// etc.) vers le portail. En mode station, réponse 404 classique.
 void WifiAuto::handleNotFound() {
-  _server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/", true);
-  _server.send(302, "text/plain", "");
+  if (_portalActive) {
+    _server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/", true);
+    _server.send(302, "text/plain", "");
+  } else {
+    _server.send(404, "text/plain", "Not Found");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pages web — configuration MQTT (mode station uniquement)
+// ---------------------------------------------------------------------------
+
+void WifiAuto::handleConfig() {
+  // Cette page n'a de sens que connecté à un réseau WiFi existant
+  if (_portalActive) {
+    _server.send(404, "text/plain", "Page indisponible en mode point d'acces");
+    return;
+  }
+
+  String html = FPSTR(PAGE_HEAD);
+  html += "<h1>Configuration MQTT</h1>";
+  html += "<p>Réseau WiFi : <b>" + htmlEscape(_ssid) + "</b>, IP : " + WiFi.localIP().toString() + "</p>";
+
+  if (!hasMqttConfig()) {
+    html += "<p>Aucune configuration MQTT enregistrée.</p>";
+  } else if (isMqttConnected()) {
+    html += "<p class='ok'>Connecté au broker MQTT à " + htmlEscape(_mqttHost) + ":" +
+            String(_mqttPort) + "</p>";
+  } else {
+    html += "<p class='err'>Non connecté au broker MQTT à " + htmlEscape(_mqttHost) + ":" +
+            String(_mqttPort) + " (" + getMqttStateText() + ")</p>";
+    if (!_mqttVerified) {
+      html += "<p class='opt'>Configuration pas encore validée : tentative " +
+              String(_mqttFailCount) + "/" + String(_mqttMaxRetries) +
+              ". Au-delà, la configuration sera effacée automatiquement.</p>";
+    }
+  }
+
+  html += "<form method='POST' action='/config'>"
+          "<label for='h'>Adresse du broker (IP ou nom)</label>"
+          "<input id='h' name='host' type='text' maxlength='128' required value='" +
+          htmlEscape(_mqttHost) + "'>"
+          "<label for='po'>Port</label>"
+          "<input id='po' name='port' type='number' min='1' max='65535' value='" +
+          String(_mqttPort) + "'>"
+          "<label for='ci'>Identifiant client (optionnel)</label>"
+          "<input id='ci' name='clientid' type='text' maxlength='64' value='" +
+          htmlEscape(_mqttClientId) + "'>"
+          "<label for='us'>Utilisateur (optionnel)</label>"
+          "<input id='us' name='username' type='text' maxlength='64' value='" +
+          htmlEscape(_mqttUsername) + "' autocomplete='off'>"
+          "<label for='pw'>Mot de passe (optionnel)</label>"
+          "<input id='pw' name='password' type='password' maxlength='64' autocomplete='off'>"
+          "<div class='opt'>Laisser vide pour conserver le mot de passe enregistré.</div>"
+          "<button type='submit'>Enregistrer</button></form>";
+
+  if (hasMqttConfig()) {
+    html += "<form method='POST' action='/config/clear' "
+            "onsubmit=\"return confirm('Effacer la configuration MQTT ?');\">"
+            "<button type='submit' style='background:#c00;margin-top:10px'>"
+            "Effacer la configuration MQTT</button></form>";
+  }
+
+  html += "<p class='opt'><a href='/'>Retour</a></p>";
+  html += FPSTR(PAGE_TAIL);
+  _server.send(200, "text/html; charset=utf-8", html);
+}
+
+void WifiAuto::handleConfigSave() {
+  if (_portalActive) {
+    _server.send(404, "text/plain", "Page indisponible en mode point d'acces");
+    return;
+  }
+
+  String host     = _server.arg("host");
+  String portStr  = _server.arg("port");
+  String clientId = _server.arg("clientid");
+  String username = _server.arg("username");
+  String password = _server.arg("password");
+
+  host.trim();
+  clientId.trim();
+  username.trim();
+
+  long port = portStr.length() > 0 ? portStr.toInt() : 1883;
+
+  String error;
+  if (host.length() == 0 || host.length() > 128) {
+    error = "L'adresse du broker doit contenir entre 1 et 128 caractères.";
+  } else if (port < 1 || port > 65535) {
+    error = "Le port doit être compris entre 1 et 65535.";
+  } else if (clientId.length() > 64 || username.length() > 64 || password.length() > 64) {
+    error = "Un des champs dépasse la longueur maximale autorisée (64 caractères).";
+  }
+
+  if (error.length() > 0) {
+    String html = FPSTR(PAGE_HEAD);
+    html += "<h1>Erreur</h1><p class='err'>" + error + "</p><p><a href='/config'>Retour</a></p>";
+    html += FPSTR(PAGE_TAIL);
+    _server.send(400, "text/html; charset=utf-8", html);
+    return;
+  }
+
+  // Champ mot de passe laissé vide : on conserve le mot de passe déjà enregistré
+  if (password.length() == 0) password = _mqttPassword;
+
+  saveMqttConfig(host, (uint16_t)port, clientId, username, password);
+  applyMqttConfig();
+
+  debugPrintf("[MQTT] Configuration enregistree : %s:%u", host.c_str(), (uint16_t)port);
+
+  String html = FPSTR(PAGE_HEAD);
+  html += "<h1>Enregistré</h1><p>Connexion au broker MQTT en cours...</p>"
+          "<p><a href='/config'>Voir le statut</a></p>";
+  html += FPSTR(PAGE_TAIL);
+  _server.send(200, "text/html; charset=utf-8", html);
+}
+
+void WifiAuto::handleConfigClear() {
+  if (_portalActive) {
+    _server.send(404, "text/plain", "Page indisponible en mode point d'acces");
+    return;
+  }
+
+  clearMqttConfig();
+
+  String html = FPSTR(PAGE_HEAD);
+  html += "<h1>Configuration MQTT effacée</h1><p><a href='/config'>Retour</a></p>";
+  html += FPSTR(PAGE_TAIL);
+  _server.send(200, "text/html; charset=utf-8", html);
 }
