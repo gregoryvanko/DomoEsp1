@@ -11,7 +11,7 @@
 // Connexion WiFi automatique pour ESP32.
 //
 // - Sans identifiants en mémoire : l'ESP32 crée un point d'accès OUVERT (sans mot de passe).
-//   Une fois connecté dessus, une page web (http://192.168.4.1, ouverte automatiquement
+//   Une fois connecté dessus, une page web (http://192.168.1.1, ouverte automatiquement
 //   sur la plupart des téléphones) permet de saisir le SSID et le mot de passe du réseau.
 // - Les identifiants sont enregistrés en mémoire flash (NVS) puis l'ESP32 redémarre
 //   et se connecte au réseau. Ils sont retrouvés après une coupure de courant.
@@ -51,6 +51,8 @@ public:
   void setRetryPolicy(uint8_t retries, uint32_t attemptTimeoutMs);
   // Active (défaut) ou coupe les logs sur le port série. Peut être appelé à tout moment.
   void setDebug(bool enabled);
+  // Adresse IP de l'ESP32 en mode point d'accès (défaut : 192.168.1.1)
+  void setPortalIP(IPAddress ip);
   // Nom d'hôte de l'ESP32 sur le réseau
   void setHostname(const char* hostname);
 
@@ -91,6 +93,7 @@ private:
   uint8_t  _maxRetries      = 2;
   uint32_t _attemptTimeoutMs = 15000;
   bool     _debug           = true;
+  IPAddress _apIP           = IPAddress(192, 168, 1, 1);
   String   _apName;
   String   _hostname;
 

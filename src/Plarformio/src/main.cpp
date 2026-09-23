@@ -34,17 +34,13 @@ void setup() {
   delay(1000);
 
   // Start WifiAuto
-  //wifi.begin();
+  wifi.begin();
 
-  Serial.println("Demarrage WiFi...");
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("test");
-  Serial.println("WiFi OK");
-
+  // Start buttons
   bouton1.begin();
   bouton2.begin();
 
-
+  // Definition des actions à réaliser lors d'un changement d'état sur les boutons
   bouton1.onLow([]()  { ActionOnButtonChange(1, 0);  });
   bouton1.onHigh([]() { ActionOnButtonChange(1, 1); });
 
@@ -54,16 +50,17 @@ void setup() {
 
 void loop() {
   // Update WifiAuto
-  //wifi.update();
+  wifi.update();
 
+  // Update buttons
   bouton1.update();
   bouton2.update();
 
 
-  // Initialisation de la mesure du temps
+  // Mesure toutes les CONFIG_MESURE_INTERVAL ms
   int32_t now = millis();
   if (now - lastMesure >= CONFIG_MESURE_INTERVAL){
     lastMesure = now;
-    Serial.println("Hello, World!");
+    //Serial.println("Hello, World!");
   }
 }

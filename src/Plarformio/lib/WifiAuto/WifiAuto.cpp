@@ -71,6 +71,7 @@ void WifiAuto::setRetryPolicy(uint8_t retries, uint32_t attemptTimeoutMs) {
   _attemptTimeoutMs = attemptTimeoutMs;
 }
 void WifiAuto::setDebug(bool enabled) { _debug = enabled; }
+void WifiAuto::setPortalIP(IPAddress ip) { _apIP = ip; }
 void WifiAuto::setHostname(const char* hostname)  { _hostname = hostname; }
 void WifiAuto::onConnected(Callback callback)     { _onConnected = callback; }
 void WifiAuto::onDisconnected(Callback callback)  { _onDisconnected = callback; }
@@ -292,6 +293,7 @@ void WifiAuto::startPortal() {
   _portalActive = true;
 
   WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(_apIP, _apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(_apName.c_str());  // réseau ouvert : pas de mot de passe
 
   // Toute résolution DNS pointe vers l'ESP32 : le portail s'ouvre automatiquement
