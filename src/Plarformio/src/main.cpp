@@ -68,7 +68,10 @@ void setup() {
 
   // Definition du callback pour la connexion au broker MQTT
   wifi.onMqttConnected([]() {
+    // Subscribe to the topic for receiving messages
     wifi.mqttSubscribe(CONFIG_MQTT_TOPIC_GET);
+    // Send all buttons status at startup
+    SendAllStatus();
   });
 
   // Start WifiAuto

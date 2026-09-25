@@ -1,7 +1,7 @@
 #pragma once
 // ── Setup ──────────────────────────────────────────────────────────────────────
 constexpr int32_t CONFIG_BAUDRATE = 115200;
-constexpr int32_t CONFIG_MESURE_INTERVAL = 1000;
+constexpr int32_t CONFIG_MESURE_INTERVAL = 60000;
 constexpr uint8_t CONFIG_DEBOUNCE_MS= 50;
 constexpr const char* CONFIG_WIFI_ESP32SSID = "ESP32-Garage";
 // ── GPIO ──────────────────────────────────────────────────────────────────────-
