@@ -9,12 +9,36 @@ La valeur de la température est envoyée sur le borker mqtt toutes les 60sec
 2. Une fois connecté au broker, l'ESP32 s'abonne au topic `CONFIG_MQTT_TOPIC_GET`.
 3. Chaque changement d'état d'un bouton (après anti-rebond) est publié sur `CONFIG_MQTT_TOPIC_PIN` + numéro du bouton, avec la valeur `0` ou `1`.
 4. Toutes les 60 secondes la valeur de la sonde de temperature est publiée sur `CONFIG_MQTT_TOPIC_TEMPERATURE`.
+5. Une fois connecté au WiFi, l'ESP32 active la mise à jour du firmware par le réseau (OTA), accessible sous le nom `ESP-Garage.rix` (réservation DHCP de l'IP de l'ESP32 dans le routeur).
 
 ## Message MQTT
 - L'ESP32 fait un subscribe sur le topic "Domo1/Get".
   - Si le payload = "All" alors il envoit le status de toutes les pin sur leur topic.
 - L'ESP32 publie le statu d'une pin sur le topic "Domo1/PinX" (ou x est le numéro de la pin allant de 1 à 8). Le payload contient la statu de la pin
 - L'ESP32 publie la temperature de la sonde DS18B20 sur le topic "Domo1/Temp1". Le payload contient la temperature en degré.
+
+## Mise à jour du firmware par WiFi (OTA)
+Voici la configuration PlatformIO, deux environnements : un pour l'USB, un pour l'OTA.
+
+```ini
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+	knolleary/PubSubClient@^2.8
+	paulstoffregen/OneWire@^2.3.8
+	milesburton/DallasTemperature@^4.0.6
+
+[env:esp32dev_ota]
+extends = env:esp32dev
+upload_protocol = espota
+upload_port = ESP-Garage.rix
+upload_flags = --auth=<mot de passe OTA>
+```
+
+> Ne pas ajouter la librairie `jandrassy/ArduinoOTA` : elle est prévue pour d'autres cartes et peut entrer en conflit avec la version native de l'ESP32.
 
 ## Pinout ESP32
 ![Alt ESP32](Image/ESP32-C6.jpg)
