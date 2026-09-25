@@ -3,6 +3,7 @@
 #include "WifiAuto.h"
 #include "Button.h"
 #include "SensorTemperature.h"
+#include <ArduinoOTA.h>
 
 // Definition du wifi
 WifiAuto wifi(CONFIG_PIN_BUTTON_BOOT, CONFIG_WIFI_ESP32SSID, CONFIG_MQTT_TOPIC_STATUS);
@@ -63,6 +64,9 @@ void setup() {
   Serial.begin(CONFIG_BAUDRATE);
   delay(1000);
 
+  // Nom d'hote envoye au routeur par DHCP (doit etre appele avant wifi.begin())
+  wifi.setHostname("ESP-Garage");
+
   // Definition du callback pour la reception des messages MQTT
   wifi.setMqttMessageCallback(onMqttMessage);
 
@@ -72,6 +76,24 @@ void setup() {
     wifi.mqttSubscribe(CONFIG_MQTT_TOPIC_GET);
     // Send all buttons status at startup
     SendAllStatus();
+  });
+
+  // Demarre l'OTA une fois le wifi connecte (une seule fois, meme apres une reconnexion)
+  wifi.onConnected([]() {
+    static bool otaStarted = false;
+    if (otaStarted) return;
+    otaStarted = true;
+
+    ArduinoOTA.setPassword("gregory");   // a definir dans config.h
+    ArduinoOTA.onStart([]()  { Serial.println("OTA: debut"); });
+    ArduinoOTA.onEnd([]()    { Serial.println("\nOTA: fin"); });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("OTA: %u%%\r", progress * 100 / total);
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("OTA erreur %u\n", error);
+    });
+    ArduinoOTA.begin();
   });
 
   // Start WifiAuto
@@ -92,6 +114,9 @@ void setup() {
 void loop() {
   // Update WifiAuto
   wifi.update();
+
+  // Update ArduinoOTA
+  ArduinoOTA.handle();
 
   // Update buttons
   for (Button& b : boutons) b.update();
