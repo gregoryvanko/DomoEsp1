@@ -16,8 +16,8 @@ constexpr uint8_t CONFIG_PIN_BUTTON7 = 21;
 constexpr uint8_t CONFIG_PIN_BUTTON8 = 22;
 constexpr uint8_t CONFIG_PIN_TEMPERATURE = 23;
 // ── MQTT ──────────────────────────────────────────────────────────────────────-
-constexpr const char* CONFIG_MQTT_TOPIC_STATUS = "Domo/status";
-constexpr const char* CONFIG_MQTT_TOPIC_GET = "Domo/Get";
-constexpr const char* CONFIG_MQTT_TOPIC_PIN = "Domo/Pin";
-constexpr const char* CONFIG_MQTT_TOPIC_TEMPERATURE = "Domo/Temp1";
+constexpr const char* CONFIG_MQTT_TOPIC_STATUS = "Domogarage/status";
+constexpr const char* CONFIG_MQTT_TOPIC_GET = "Domogarage/Get";
+constexpr const char* CONFIG_MQTT_TOPIC_PIN = "Domogarage/Pin";
+constexpr const char* CONFIG_MQTT_TOPIC_TEMPERATURE = "Domogarage/Temp1";
 constexpr const char* CONFIG_MQTT_PAYLOAD_ALL = "All";
